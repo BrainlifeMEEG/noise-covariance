@@ -76,7 +76,15 @@ def main():
         print(f"Loaded empty-room recording: {len(data.ch_names)} channels")
 
     if data is None:
-        data = load_input_data(config)
+        try:
+            data = load_input_data(config)
+        except (FileNotFoundError, Exception) as e:
+            print(f"ERROR: {e}")
+            # Write minimal product.json with error info
+            error_product = {'brainlife': [{'type': 'error', 'msg': str(e)}]}
+            with open('product.json', 'w') as f:
+                json.dump(error_product, f)
+            return
         if isinstance(data, mne.BaseEpochs):
             print(f"Loaded {len(data)} epochs, {len(data.ch_names)} channels")
         elif isinstance(data, mne.io.BaseRaw):

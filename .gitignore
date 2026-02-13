@@ -5,3 +5,5 @@
 /product.json
 __pycache__/
 *.pyc
+/brainlife_utils_old/
+/helper.py

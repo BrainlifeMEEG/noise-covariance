@@ -62,6 +62,82 @@ def safe_step(step_name, func, *args, report_items=None, **kwargs):
 
 
 # ---------------------------------------------------------------------------
+# Brainlife file path resolution
+# ---------------------------------------------------------------------------
+
+# Default filenames per Brainlife datatype.
+# When Brainlife provides a directory (no File Mapping), the app must
+# find the expected file inside the directory.
+_DEFAULT_FILENAMES = {
+    'epochs': ['meg-epo.fif', 'epochs-epo.fif'],
+    'evoked': ['evoked-ave.fif', 'meg-ave.fif'],
+    'raw': ['raw.fif'],
+    'empty_room': ['raw.fif'],
+    'forward': ['forward-fwd.fif'],
+    'noise_cov': ['noise-cov.fif'],
+    'inverse': ['inverse_operator-inv.fif'],
+    'trans': ['trans.fif'],
+    'bem': ['bem-sol.fif'],
+}
+
+
+def resolve_file_path(path, key=None):
+    """Resolve a config path that may be a file or a Brainlife directory.
+
+    On Brainlife, when no File Mapping is configured, the config value is
+    a directory path. This function finds the actual file inside it using
+    the default filename for that datatype.
+
+    Parameters
+    ----------
+    path : str or None
+        File path or directory path from config.json.
+    key : str, optional
+        Config key name (e.g., 'epochs', 'raw', 'forward') used to look up
+        the default filename. If None, searches for any .fif file.
+
+    Returns
+    -------
+    resolved : str or None
+        Full path to the file, or None if not found.
+    """
+    if not path:
+        return None
+
+    # Already a file — use directly
+    if os.path.isfile(path):
+        return path
+
+    # It's a directory — look for the default file inside
+    if os.path.isdir(path):
+        # Try known default filenames for this key
+        if key and key in _DEFAULT_FILENAMES:
+            for fname in _DEFAULT_FILENAMES[key]:
+                candidate = os.path.join(path, fname)
+                if os.path.isfile(candidate):
+                    print(f"Resolved {key}: {path} -> {candidate}")
+                    return candidate
+
+        # Fallback: find any .fif file in the directory
+        fif_files = [f for f in os.listdir(path) if f.endswith('.fif')]
+        if len(fif_files) == 1:
+            candidate = os.path.join(path, fif_files[0])
+            print(f"Resolved {key or 'input'}: {path} -> {candidate}")
+            return candidate
+        elif len(fif_files) > 1:
+            print(f"Warning: multiple .fif files in {path}: {fif_files}. "
+                  f"Using first match.")
+            candidate = os.path.join(path, fif_files[0])
+            return candidate
+
+        print(f"Warning: no .fif file found in directory {path}")
+        return None
+
+    # Path doesn't exist
+    return path  # Return as-is; caller will handle FileNotFoundError
+
+
+# ---------------------------------------------------------------------------
 # Load input data
 # ---------------------------------------------------------------------------
 
@@ -86,8 +162,14 @@ def load_input_data(config):
     FileNotFoundError
         If no valid input file is found.
     """
+    # Resolve paths (handles Brainlife directory inputs)
+    evoked_file = resolve_file_path(config.get('evoked', ''), key='evoked')
+    epochs_file = resolve_file_path(config.get('epochs', ''), key='epochs')
+    raw_file = resolve_file_path(
+        config.get('raw', '') or config.get('mne', ''), key='raw'
+    )
+
     # Try evoked first
-    evoked_file = config.get('evoked', '')
     if evoked_file and os.path.exists(evoked_file):
         evoked = mne.read_evokeds(evoked_file)
         if isinstance(evoked, list):
@@ -97,7 +179,6 @@ def load_input_data(config):
         return evoked
 
     # Try epochs
-    epochs_file = config.get('epochs', '')
     if epochs_file and os.path.exists(epochs_file):
         if epochs_file.endswith('.bdf'):
             raw = mne.io.read_raw_bdf(epochs_file, preload=True)
@@ -112,7 +193,6 @@ def load_input_data(config):
         return epochs
 
     # Try raw
-    raw_file = config.get('raw', '') or config.get('mne', '')
     if raw_file and os.path.exists(raw_file):
         raw = mne.io.read_raw_fif(raw_file, preload=True)
         events = mne.find_events(raw)
