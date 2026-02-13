@@ -104,11 +104,31 @@ def main():
     else:
         method = [method_str]
 
-    rank = config.get('rank') or 'auto'
-    if rank == 'auto':
+    # rank: None | 'info' | 'full' | dict
+    # None = estimate from data, 'info' = from measurement info/Maxwell,
+    # 'full' = assume full rank, dict = per-channel-type e.g. {"mag": 90, "eeg": 45}
+    rank_raw = config.get('rank')
+    if rank_raw is None or rank_raw == '' or str(rank_raw).lower() in ('none', 'auto'):
         rank = None
-    elif isinstance(rank, str) and rank.isdigit():
-        rank = int(rank)
+    elif isinstance(rank_raw, dict):
+        # Already a dict from JSON, e.g. {"mag": 90, "eeg": 45}
+        rank = {k: int(v) for k, v in rank_raw.items()}
+    elif isinstance(rank_raw, str) and rank_raw.lower() in ('info', 'full'):
+        rank = rank_raw.lower()
+    elif isinstance(rank_raw, str):
+        # Try parsing as JSON dict, e.g. '{"mag": 90, "eeg": 45}'
+        try:
+            parsed = json.loads(rank_raw)
+            if isinstance(parsed, dict):
+                rank = {k: int(v) for k, v in parsed.items()}
+            else:
+                print(f"WARNING: Could not parse rank='{rank_raw}', using None (auto-detect)")
+                rank = None
+        except (json.JSONDecodeError, ValueError):
+            print(f"WARNING: Unknown rank value '{rank_raw}', using None (auto-detect)")
+            rank = None
+    else:
+        rank = None
 
     import time
     t0 = time.time()
@@ -138,12 +158,25 @@ def main():
     ch_summary = ', '.join(f"{v} {k}" for k, v in sorted(ch_types.items()))
     report_msgs.append(f"Channels in covariance: {len(noise_cov.ch_names)} ({ch_summary})")
 
+    # Total baseline duration used for covariance
+    if isinstance(data, mne.BaseEpochs):
+        baseline_per_epoch = tmax - data.tmin  # seconds per epoch
+        total_baseline_sec = len(data) * baseline_per_epoch
+        report_msgs.append(
+            f"Baseline duration: {baseline_per_epoch:.3f} s/epoch x {len(data)} epochs "
+            f"= {total_baseline_sec:.1f} s total"
+        )
+    elif isinstance(data, mne.io.BaseRaw):
+        total_baseline_sec = data.times[-1] - data.times[0]
+        report_msgs.append(f"Recording duration used: {total_baseline_sec:.1f} s")
+
     # Samples and method
     n_samples = noise_cov.nfree + 1
     samples_per_ch = n_samples / max(len(noise_cov.ch_names), 1)
+    total_data_sec = n_samples / info['sfreq']
     cov_method = noise_cov.get('method', method_str)
     report_msgs.append(f"Method: {cov_method}")
-    report_msgs.append(f"Samples used: {n_samples} ({samples_per_ch:.1f} per channel)")
+    report_msgs.append(f"Samples used: {n_samples} ({samples_per_ch:.1f} per channel, {total_data_sec:.1f} s of data)")
     if samples_per_ch < 5:
         report_msgs.append(
             f"WARNING: Low samples/channel ratio ({samples_per_ch:.1f}). "
