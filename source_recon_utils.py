@@ -271,13 +271,15 @@ def detect_modality(info):
 # Noise covariance (bl-mne-noise-cov)
 # ---------------------------------------------------------------------------
 
-def compute_noise_covariance(data, tmax=0.0, method=None, rank=None):
+def compute_noise_covariance(data, tmin=None, tmax=0.0, method=None, rank=None):
     """Compute noise covariance from epochs baseline, empty-room, or ad-hoc.
 
     Parameters
     ----------
     data : mne.Epochs | mne.Evoked | mne.io.Raw
         Input data. Evoked → ad-hoc, Raw → full recording, Epochs → baseline.
+    tmin : float or None
+        Lower time bound for baseline covariance (epochs only). None = epoch start.
     tmax : float
         Upper time bound for baseline covariance (epochs only).
     method : list or None
@@ -326,12 +328,16 @@ def compute_noise_covariance(data, tmax=0.0, method=None, rank=None):
 
     # Epochs → compute from baseline
     try:
+        cov_kwargs = dict(tmax=tmax)
+        if tmin is not None:
+            cov_kwargs['tmin'] = tmin
         noise_cov = _try_compute(
-            lambda **kw: mne.compute_covariance(data, tmax=tmax, **kw),
+            lambda **kw: mne.compute_covariance(data, **cov_kwargs, **kw),
             method, rank=rank, verbose=True
         )
+        tmin_str = f"{tmin}" if tmin is not None else "epoch start"
         print(f"Computed noise covariance from {len(data)} epochs "
-              f"(baseline < {tmax}s)")
+              f"(baseline [{tmin_str}, {tmax}]s)")
         return noise_cov
     except Exception as e:
         print(f"Warning: covariance computation failed ({e}), "
@@ -755,7 +761,7 @@ def make_inverse_and_apply(data, fwd, noise_cov, method='dSPM',
 
 def generate_report(report_items, evoked=None, noise_cov=None,
                     fwd=None, stc=None, modality=None, config=None,
-                    out_dir='out_dir'):
+                    out_dir='out_dir', subjects_dir=None, subject=None):
     """Generate comprehensive report with visualizations.
 
     Always writes product.json, even if some steps failed.
@@ -840,6 +846,103 @@ def generate_report(report_items, evoked=None, noise_cov=None,
             add_info_to_product(report_items,
                                 f"⚠️ Could not plot source estimate: {e}",
                                 "warning")
+
+        # Brain surface plots (requires subjects_dir)
+        _subj = subject or (config.get('subject') if config else None)
+        _sdir = subjects_dir or (config.get('subjects_dir') if config else None)
+        if _subj and _sdir:
+            try:
+                import pyvista as pv
+                pv.OFF_SCREEN = True
+                mne.viz.set_3d_backend('pyvistaqt')
+
+                # Monkey-patch pyvistaqt backend for offscreen rendering
+                # (avoids Qt window crash under headless/xvfb)
+                from mne.viz.backends._pyvista import (
+                    PyVistaFigure, Plotter as PVPlotter,
+                    _PyVistaRenderer, _ALL_PLOTTERS,
+                )
+                import mne.viz.backends.renderer as renderer_mod
+
+                _original_build = PyVistaFigure._build
+
+                def _patched_build(self):
+                    if self.store.get('off_screen', False):
+                        if self._plotter is None:
+                            store_filtered = {
+                                k: v for k, v in self.store.items()
+                                if k in ('window_size', 'shape', 'off_screen',
+                                         'border', 'multi_samples')
+                            }
+                            plotter = PVPlotter(**store_filtered)
+                            plotter.background_color = self.background_color
+                            self._plotter = plotter
+                            try:
+                                _ALL_PLOTTERS[plotter._id_name] = plotter
+                            except AttributeError:
+                                pass
+                        if self.plotter.iren is not None:
+                            self.plotter.iren.initialize()
+                            def safe_update(stime=1, force_redraw=True):
+                                self.plotter.render()
+                            self.plotter.update = safe_update
+                        return self.plotter
+                    return _original_build(self)
+
+                PyVistaFigure._build = _patched_build
+
+                class _OffscreenRenderer(_PyVistaRenderer):
+                    _kind = 'pyvistaqt'
+                    def _window_initialize(self, **kwargs): pass
+                    def _window_close_connect(self, func, *, after=True): pass
+                    def _window_close_disconnect(self, func): pass
+                    def _window_set_theme(self, theme): pass
+
+                renderer_mod.backend._Renderer = _OffscreenRenderer
+
+                peak_vert, peak_time = stc.get_peak()
+                brain = mne.viz.Brain(
+                    _subj, subjects_dir=_sdir, hemi='split',
+                    views='lateral', background='white', size=(1200, 500),
+                    offscreen=True, show=False,
+                )
+                brain.add_data(
+                    stc.lh_data, colormap='hot',
+                    vertices=stc.vertices[0],
+                    smoothing_steps=10, time=stc.times,
+                    time_label=f'{method} value',
+                    hemi='lh', initial_time=peak_time,
+                    colorbar=True, transparent=True,
+                )
+                brain.add_data(
+                    stc.rh_data, colormap='hot',
+                    vertices=stc.vertices[1],
+                    smoothing_steps=10, time=stc.times,
+                    hemi='rh', initial_time=peak_time,
+                    colorbar=False, transparent=True,
+                )
+                brain.add_foci(
+                    peak_vert, coords_as_verts=True, hemi='lh',
+                    color='blue', scale_factor=0.6,
+                )
+                fig_path = os.path.join('out_figs', 'brain_lateral.png')
+                brain.save_image(fig_path)
+                try:
+                    brain.close()
+                except Exception:
+                    pass
+                add_image_to_product(
+                    report_items,
+                    f'Brain (lateral, peak at {peak_time*1000:.0f}ms)',
+                    filepath=fig_path,
+                )
+                print(f"Brain surface plot saved: {fig_path}")
+            except Exception as e:
+                add_info_to_product(
+                    report_items,
+                    f"Could not render brain plots: {e}",
+                    "warning",
+                )
 
     # Write product.json
     create_product_json(report_items)

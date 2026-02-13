@@ -95,6 +95,9 @@ def main():
             print(f"Loaded {type(data).__name__}")
 
     # == STEP 2: Compute noise covariance ==
+    tmin_val = config.get('tmin')
+    tmin = float(tmin_val) if tmin_val is not None else None  # None = use epoch start
+
     tmax_val = config.get('tmax')
     tmax = float(tmax_val) if tmax_val is not None else 0.0
 
@@ -132,7 +135,7 @@ def main():
 
     import time
     t0 = time.time()
-    noise_cov = compute_noise_covariance(data, tmax=tmax, method=method, rank=rank)
+    noise_cov = compute_noise_covariance(data, tmin=tmin, tmax=tmax, method=method, rank=rank)
     cov_time = time.time() - t0
     print(f"Noise covariance computed in {cov_time:.1f}s")
 
@@ -143,7 +146,8 @@ def main():
     # Input type
     if isinstance(data, mne.BaseEpochs):
         input_type = 'epochs'
-        report_msgs.append(f"Input: {len(data)} epochs, baseline [{data.tmin:.3f}, {tmax}] s")
+        actual_tmin = tmin if tmin is not None else data.tmin
+        report_msgs.append(f"Input: {len(data)} epochs, baseline [{actual_tmin:.3f}, {tmax}] s")
     elif isinstance(data, mne.io.BaseRaw):
         input_type = 'raw (empty-room)' if empty_room_file else 'raw'
         report_msgs.append(f"Input: {input_type}, {data.times[-1]:.1f} s duration")
@@ -160,7 +164,7 @@ def main():
 
     # Total baseline duration used for covariance
     if isinstance(data, mne.BaseEpochs):
-        baseline_per_epoch = tmax - data.tmin  # seconds per epoch
+        baseline_per_epoch = tmax - actual_tmin  # seconds per epoch
         total_baseline_sec = len(data) * baseline_per_epoch
         report_msgs.append(
             f"Baseline duration: {baseline_per_epoch:.3f} s/epoch x {len(data)} epochs "
