@@ -30,6 +30,7 @@ for _path in [_app_dir, _parent_dir]:
         sys.path.insert(0, _path)
         break
 
+import numpy as np
 import mne
 import matplotlib
 matplotlib.use('Agg')
@@ -109,11 +110,70 @@ def main():
     elif isinstance(rank, str) and rank.isdigit():
         rank = int(rank)
 
+    import time
+    t0 = time.time()
     noise_cov = compute_noise_covariance(data, tmax=tmax, method=method, rank=rank)
-    print("Noise covariance computed")
+    cov_time = time.time() - t0
+    print(f"Noise covariance computed in {cov_time:.1f}s")
+
+    # == Collect summary info for product.json ==
+    info = data.info
+    report_msgs = []
+
+    # Input type
+    if isinstance(data, mne.BaseEpochs):
+        input_type = 'epochs'
+        report_msgs.append(f"Input: {len(data)} epochs, baseline [{data.tmin:.3f}, {tmax}] s")
+    elif isinstance(data, mne.io.BaseRaw):
+        input_type = 'raw (empty-room)' if empty_room_file else 'raw'
+        report_msgs.append(f"Input: {input_type}, {data.times[-1]:.1f} s duration")
+    else:
+        input_type = type(data).__name__
+        report_msgs.append(f"Input: {input_type}")
+
+    # Channel summary
+    from collections import Counter
+    ch_types = Counter(mne.channel_type(info, i) for i in range(len(info['ch_names']))
+                       if info['ch_names'][i] in noise_cov.ch_names)
+    ch_summary = ', '.join(f"{v} {k}" for k, v in sorted(ch_types.items()))
+    report_msgs.append(f"Channels in covariance: {len(noise_cov.ch_names)} ({ch_summary})")
+
+    # Samples and method
+    n_samples = noise_cov.nfree + 1
+    samples_per_ch = n_samples / max(len(noise_cov.ch_names), 1)
+    cov_method = noise_cov.get('method', method_str)
+    report_msgs.append(f"Method: {cov_method}")
+    report_msgs.append(f"Samples used: {n_samples} ({samples_per_ch:.1f} per channel)")
+    if samples_per_ch < 5:
+        report_msgs.append(
+            f"WARNING: Low samples/channel ratio ({samples_per_ch:.1f}). "
+            "Consider using more data or fewer channels for reliable estimation."
+        )
+
+    # Rank and condition number
+    evals = np.linalg.eigvalsh(noise_cov.data)
+    n_zero = np.sum(evals < evals[-1] * 1e-10)
+    eff_rank = len(evals) - n_zero
+    cond = evals[-1] / max(evals[0], 1e-30)
+    report_msgs.append(f"Effective rank: {eff_rank} / {len(noise_cov.ch_names)}")
+    if cond > 1e12:
+        report_msgs.append(f"Condition number: {cond:.1e} (high -- regularization recommended)")
+    else:
+        report_msgs.append(f"Condition number: {cond:.1e}")
+
+    # Projectors
+    projs = info.get('projs', [])
+    if projs:
+        proj_names = [p['desc'] for p in projs if p['active']]
+        report_msgs.append(f"Active projectors ({len(proj_names)}): {', '.join(proj_names)}")
+
+    # Sampling frequency
+    report_msgs.append(f"Sampling frequency: {info['sfreq']:.1f} Hz")
+
+    # Compute time
+    report_msgs.append(f"Computation time: {cov_time:.1f} s")
 
     # == STEP 3: Generate plots and report ==
-    info = data.info
     report = mne.Report(title='Noise Covariance Report')
 
     # Plot 1: Covariance matrix + channel noise spectra (mne.viz.plot_cov)
@@ -164,8 +224,16 @@ def main():
     # == STEP 4: Save outputs ==
     save_outputs(noise_cov=noise_cov, out_dir='out_dir')
 
-    # == STEP 5: product.json with figure thumbnails ==
+    # == STEP 5: product.json with info + figure thumbnails ==
     dict_json_product = {'brainlife': []}
+
+    # Add text info messages
+    for msg in report_msgs:
+        msg_type = 'warning' if msg.startswith('WARNING') else 'info'
+        dict_json_product['brainlife'].append({
+            'type': msg_type,
+            'msg': msg,
+        })
 
     for img_name, img_path in [
         ('Covariance Matrix', 'out_figs/noise_covariance.png'),
