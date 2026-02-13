@@ -67,7 +67,8 @@ This app is step 2 of the source reconstruction pipeline:
 ```
 
 ## Authors
-- [Kami Salibayeva](https://github.com/KSalibay)
+- [Maximilien Chaumon](https://github.com/dnacombo)
+- [obVdo](https://github.com/obVdo)
 
 ## Funding Acknowledgement
 

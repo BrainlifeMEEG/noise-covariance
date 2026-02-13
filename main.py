@@ -11,7 +11,8 @@ Outputs: noise-cov.fif, MNE HTML report with covariance plots.
 # Copyright (c) 2026 brainlife.io
 #
 # Authors:
-# - Kami Salibayeva (https://github.com/KSalibay)
+# - Maximilien Chaumon (https://github.com/dnacombo)
+# - obVdo (https://github.com/obVdo)
 
 import os
 import sys
