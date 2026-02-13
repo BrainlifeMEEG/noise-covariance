@@ -95,11 +95,19 @@ def main():
             print(f"Loaded {type(data).__name__}")
 
     # == STEP 2: Compute noise covariance ==
+    # tmin: baseline start time (seconds). Empty/""/None = use epoch start.
+    # On Brainlife, leave empty or don't set to use full epoch baseline.
     tmin_val = config.get('tmin')
-    tmin = float(tmin_val) if tmin_val is not None else None  # None = use epoch start
+    if tmin_val is None or tmin_val == '' or tmin_val == 'None':
+        tmin = None  # use epoch start
+    else:
+        tmin = float(tmin_val)
 
     tmax_val = config.get('tmax')
-    tmax = float(tmax_val) if tmax_val is not None else 0.0
+    if tmax_val is None or tmax_val == '' or str(tmax_val) == 'None':
+        tmax = None  # None = use last sample (MNE default)
+    else:
+        tmax = float(tmax_val)
 
     method_str = config.get('method') or 'shrunk'
     if method_str == 'auto':
@@ -147,7 +155,8 @@ def main():
     if isinstance(data, mne.BaseEpochs):
         input_type = 'epochs'
         actual_tmin = tmin if tmin is not None else data.tmin
-        report_msgs.append(f"Input: {len(data)} epochs, baseline [{actual_tmin:.3f}, {tmax}] s")
+        actual_tmax = tmax if tmax is not None else data.tmax
+        report_msgs.append(f"Input: {len(data)} epochs, baseline [{actual_tmin:.3f}, {actual_tmax:.3f}] s")
     elif isinstance(data, mne.io.BaseRaw):
         input_type = 'raw (empty-room)' if empty_room_file else 'raw'
         report_msgs.append(f"Input: {input_type}, {data.times[-1]:.1f} s duration")
@@ -164,7 +173,7 @@ def main():
 
     # Total baseline duration used for covariance
     if isinstance(data, mne.BaseEpochs):
-        baseline_per_epoch = tmax - actual_tmin  # seconds per epoch
+        baseline_per_epoch = actual_tmax - actual_tmin  # seconds per epoch
         total_baseline_sec = len(data) * baseline_per_epoch
         report_msgs.append(
             f"Baseline duration: {baseline_per_epoch:.3f} s/epoch x {len(data)} epochs "

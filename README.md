@@ -28,14 +28,25 @@ The app supports three input types:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | **method** | string | `shrunk` | Covariance estimator. Options: `shrunk` (regularized, recommended), `empirical` (simple), `auto` (tries shrunk then empirical) |
-| **tmax** | float | `0.0` | Upper time limit (seconds) for the baseline window. `0.0` means use only pre-stimulus data. |
-| **rank** | string | `auto` | Rank estimation for the covariance. `auto` lets MNE determine the rank automatically. Set to an integer to override. |
+| **tmin** | string | `None` | Lower time bound (seconds) for the baseline window. `None` = use first sample. |
+| **tmax** | string | `None` | Upper time bound (seconds) for the baseline window. `None` = use last sample. |
+| **rank** | string | `None` | Rank estimation. `None` (auto-detect from data), `info` (from measurement info/Maxwell), `full` (assume full rank), or JSON dict e.g. `{"eeg": 45}` |
+
+### tmin / tmax Behavior
+
+All parameters are strings on Brainlife. `"None"` or empty = Python `None` (MNE default). Any number = that time in seconds.
+
+| | Epochs (`compute_covariance`) | Raw / empty-room (`compute_raw_covariance`) |
+|---|---|---|
+| **tmin=None** | first sample of epoch | 0 (MNE default) |
+| **tmax=None** | last sample of epoch | end of recording |
+| **tmin/tmax=float** | that time in seconds | that time in seconds |
 
 ### Parameter Guidance
 
 - **method**: Use `shrunk` if you have enough data (>5 samples per channel). Use `empirical` if shrunk fails. Use `auto` to try both.
-- **tmax**: Keep at `0.0` for event-related designs (uses only pre-stimulus baseline). Set to a positive value only if you want to include post-stimulus data in the noise estimate.
-- **rank**: Leave as `auto` unless you know the data rank (e.g., after Maxwell filtering or ICA, the rank is reduced).
+- **tmin/tmax**: For event-related designs, use `tmin=None, tmax=0.0` to use only the pre-stimulus baseline. Use both as `None` to use the full epoch/recording.
+- **rank**: Leave as `None` unless you know the data rank (e.g., after Maxwell filtering or ICA, the rank is reduced). Use `info` if Maxwell filtering was applied.
 
 ## Usage
 
@@ -45,8 +56,9 @@ Configuration file example:
     "epochs": "/path/to/epochs-epo.fif",
     "empty_room": "",
     "method": "shrunk",
-    "tmax": 0.0,
-    "rank": "auto"
+    "tmin": "None",
+    "tmax": "0.0",
+    "rank": "None"
 }
 ```
 

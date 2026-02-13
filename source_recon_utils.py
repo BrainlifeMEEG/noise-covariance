@@ -271,7 +271,7 @@ def detect_modality(info):
 # Noise covariance (bl-mne-noise-cov)
 # ---------------------------------------------------------------------------
 
-def compute_noise_covariance(data, tmin=None, tmax=0.0, method=None, rank=None):
+def compute_noise_covariance(data, tmin=None, tmax=None, method=None, rank=None):
     """Compute noise covariance from epochs baseline, empty-room, or ad-hoc.
 
     Parameters
@@ -279,9 +279,9 @@ def compute_noise_covariance(data, tmin=None, tmax=0.0, method=None, rank=None):
     data : mne.Epochs | mne.Evoked | mne.io.Raw
         Input data. Evoked → ad-hoc, Raw → full recording, Epochs → baseline.
     tmin : float or None
-        Lower time bound for baseline covariance (epochs only). None = epoch start.
-    tmax : float
-        Upper time bound for baseline covariance (epochs only).
+        Lower time bound. Epochs: None = epoch start. Raw: None = 0 (MNE default).
+    tmax : float or None
+        Upper time bound. Epochs: None = last sample. Raw: None = end of recording.
     method : list or None
         Estimator method(s). None defaults to ['shrunk', 'empirical'].
     rank : None | 'info' | 'full' | dict
@@ -313,11 +313,17 @@ def compute_noise_covariance(data, tmin=None, tmax=0.0, method=None, rank=None):
                 return compute_fn(method=['empirical'], **kwargs)
             raise
 
-    # Raw (empty-room) → compute from full recording
+    # Raw (empty-room) → compute from recording
+    # mne.compute_raw_covariance defaults: tmin=0, tmax=None (full recording)
     if isinstance(data, mne.io.BaseRaw):
         try:
+            raw_kwargs = {}
+            if tmin is not None:
+                raw_kwargs['tmin'] = tmin
+            if tmax is not None:
+                raw_kwargs['tmax'] = tmax
             noise_cov = _try_compute(
-                lambda **kw: mne.compute_raw_covariance(data, **kw),
+                lambda **kw: mne.compute_raw_covariance(data, **raw_kwargs, **kw),
                 method, rank=rank, verbose=True
             )
             print(f"Computed noise covariance from raw recording")
@@ -328,16 +334,19 @@ def compute_noise_covariance(data, tmin=None, tmax=0.0, method=None, rank=None):
 
     # Epochs → compute from baseline
     try:
-        cov_kwargs = dict(tmax=tmax)
+        cov_kwargs = {}
         if tmin is not None:
             cov_kwargs['tmin'] = tmin
+        if tmax is not None:
+            cov_kwargs['tmax'] = tmax
         noise_cov = _try_compute(
             lambda **kw: mne.compute_covariance(data, **cov_kwargs, **kw),
             method, rank=rank, verbose=True
         )
         tmin_str = f"{tmin}" if tmin is not None else "epoch start"
+        tmax_str = f"{tmax}" if tmax is not None else "epoch end"
         print(f"Computed noise covariance from {len(data)} epochs "
-              f"(baseline [{tmin_str}, {tmax}]s)")
+              f"(baseline [{tmin_str}, {tmax_str}]s)")
         return noise_cov
     except Exception as e:
         print(f"Warning: covariance computation failed ({e}), "
