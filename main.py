@@ -94,6 +94,46 @@ def main():
         else:
             print(f"Loaded {type(data).__name__}")
 
+    # == Detect and interpolate bad channels ==
+    # Flag channels with extreme baseline variance (e.g. noisy or dead channels).
+    # These crush the covariance colorbar and degrade the estimate.
+    # Done PER CHANNEL TYPE since MEG grad/mag/EEG have very different scales.
+    auto_bad_str = str(config.get('auto_bad_channels', 'true')).lower()
+    auto_bad = auto_bad_str in ('true', '1', 'yes', '')
+    bad_ch_threshold = float(config.get('bad_channel_threshold', 5))
+    all_new_bads = []
+    ch_variance_info = {}  # for plotting: {ch_type: (ch_names, variances, median, threshold)}
+
+    if auto_bad and isinstance(data, mne.BaseEpochs):
+        existing_bads = list(data.info.get('bads', []))
+        for ch_type, pick_kwargs in [
+            ('eeg', dict(eeg=True, meg=False)),
+            ('grad', dict(meg='grad', eeg=False)),
+            ('mag', dict(meg='mag', eeg=False)),
+        ]:
+            picks = mne.pick_types(data.info, exclude='bads', **pick_kwargs)
+            if len(picks) == 0:
+                continue
+            baseline_data = data.copy().crop(tmin=data.tmin, tmax=0.0).get_data()[:, picks, :]
+            ch_var = np.var(baseline_data, axis=(0, 2))
+            median_var = np.median(ch_var)
+            pick_names = [data.ch_names[p] for p in picks]
+            ch_variance_info[ch_type] = (pick_names, ch_var, median_var, bad_ch_threshold)
+            if median_var > 0:
+                bad_idx = np.where(ch_var > bad_ch_threshold * median_var)[0]
+                dead_idx = np.where(ch_var < median_var / 100)[0]
+                for idx in np.concatenate([bad_idx, dead_idx]):
+                    name = data.ch_names[picks[idx]]
+                    if name not in existing_bads and name not in all_new_bads:
+                        all_new_bads.append(name)
+        if all_new_bads:
+            data.info['bads'] = existing_bads + all_new_bads
+            print(f"Auto-detected {len(all_new_bads)} bad channels (>{bad_ch_threshold}x median variance): {all_new_bads}")
+            data.interpolate_bads(reset_bads=True)
+            print(f"Interpolated {len(all_new_bads)} bad channels")
+        else:
+            print("No bad channels detected")
+
     # == STEP 2: Compute noise covariance ==
     # tmin: baseline start time (seconds). Empty/""/None = use epoch start.
     # On Brainlife, leave empty or don't set to use full epoch baseline.
@@ -200,7 +240,9 @@ def main():
     evals = np.linalg.eigvalsh(noise_cov.data)
     n_zero = np.sum(evals < evals[-1] * 1e-10)
     eff_rank = len(evals) - n_zero
-    cond = evals[-1] / max(evals[0], 1e-30)
+    # Skip near-zero eigenvalues (from avg reference, projectors) for condition number
+    nonzero_evals = evals[evals > evals[-1] * 1e-10]
+    cond = nonzero_evals[-1] / nonzero_evals[0] if len(nonzero_evals) > 0 else float('inf')
     report_msgs.append(f"Effective rank: {eff_rank} / {len(noise_cov.ch_names)}")
     if cond > 1e12:
         report_msgs.append(f"Condition number: {cond:.1e} (high -- regularization recommended)")
@@ -221,6 +263,30 @@ def main():
 
     # == STEP 3: Generate plots and report ==
     report = mne.Report(title='Noise Covariance Report')
+
+    # Plot 0: Channel variance with bad channel detection (if auto_bad was run)
+    if ch_variance_info:
+        n_types = len(ch_variance_info)
+        fig_var, axes_var = plt.subplots(n_types, 1, figsize=(14, 4 * n_types), squeeze=False)
+        for ax_idx, (ch_type, (names, variances, med, thresh)) in enumerate(ch_variance_info.items()):
+            ax = axes_var[ax_idx, 0]
+            colors = ['red' if v > thresh * med or (med > 0 and v < med / 100) else 'steelblue'
+                       for v in variances]
+            ax.bar(range(len(variances)), variances, width=1.0, color=colors)
+            if med > 0:
+                ax.axhline(med, color='green', ls='--', lw=1, label='Median')
+                ax.axhline(thresh * med, color='orange', ls='--', lw=1, label=f'{thresh:.0f}x median')
+            ax.set_xlabel('Channel index')
+            ax.set_ylabel('Variance')
+            n_bad = sum(1 for c in colors if c == 'red')
+            ax.set_title(f'{ch_type.upper()} channel variance ({n_bad} bad in red)')
+            ax.legend(loc='upper right')
+        plt.suptitle('Auto Bad Channel Detection', fontsize=14, y=1.01)
+        plt.tight_layout()
+        var_path = os.path.join('out_figs', 'channel_variance.png')
+        fig_var.savefig(var_path, dpi=150, bbox_inches='tight')
+        plt.close(fig_var)
+        report.add_image(var_path, title='Channel Variance (Bad Channel Detection)')
 
     # Plot 1: Covariance matrix + channel noise spectra (mne.viz.plot_cov)
     try:
@@ -281,7 +347,15 @@ def main():
             'msg': msg,
         })
 
+    # Add bad channel info to product.json
+    if all_new_bads:
+        dict_json_product['brainlife'].append({
+            'type': 'warning',
+            'msg': f"Auto-detected and interpolated {len(all_new_bads)} bad channels: {', '.join(all_new_bads)}",
+        })
+
     for img_name, img_path in [
+        ('Channel Variance', 'out_figs/channel_variance.png'),
         ('Covariance Matrix', 'out_figs/noise_covariance.png'),
         ('Channel Noise Spectra', 'out_figs/noise_spectra.png'),
         ('Whitened Evoked', 'out_figs/whitened_evoked.png'),

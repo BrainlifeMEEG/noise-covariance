@@ -190,6 +190,7 @@ def load_input_data(config):
             epochs = mne.read_epochs(epochs_file, preload=True)
         print(f"Loaded {len(epochs)} epochs from {epochs_file}, "
               f"{len(epochs.ch_names)} channels")
+        _check_add_eeg_ref(epochs)
         return epochs
 
     # Try raw
