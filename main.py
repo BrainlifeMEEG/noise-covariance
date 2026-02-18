@@ -68,6 +68,18 @@ def main():
 
     config = load_config()
 
+    # ad_hoc_fallback: if False (default), the app fails when no epochs or empty-room
+    # are provided. If True, falls back to a diagonal (ad-hoc) covariance when only
+    # evoked data is available. Expose as a checkbox in the Brainlife UI.
+    ad_hoc_fallback = str(config.get('ad_hoc_fallback', 'false')).lower() in ('true', '1', 'yes')
+
+    def _fail(msg):
+        """Write error product.json and exit."""
+        print(f"ERROR: {msg}")
+        error_product = {'brainlife': [{'type': 'error', 'msg': msg}]}
+        with open('product.json', 'w') as f:
+            json.dump(error_product, f)
+
     # == STEP 1: Load input data ==
     # Priority: empty_room > epochs > raw > evoked
     empty_room_file = config.get('empty_room')
@@ -81,18 +93,24 @@ def main():
         try:
             data = load_input_data(config)
         except (FileNotFoundError, Exception) as e:
-            print(f"ERROR: {e}")
-            # Write minimal product.json with error info
-            error_product = {'brainlife': [{'type': 'error', 'msg': str(e)}]}
-            with open('product.json', 'w') as f:
-                json.dump(error_product, f)
+            _fail(
+                f"No valid input provided. Provide 'epochs' or 'empty_room' in config.json. "
+                f"Checked: evoked='{config.get('evoked')}', epochs='{config.get('epochs')}', "
+                f"raw='{config.get('raw')}'"
+            )
+            return
+        if isinstance(data, mne.Evoked) and not ad_hoc_fallback:
+            _fail(
+                "Only evoked data provided — cannot compute proper noise covariance from evoked. "
+                "Provide 'epochs' or 'empty_room', or enable 'ad_hoc_fallback' for a diagonal estimate."
+            )
             return
         if isinstance(data, mne.BaseEpochs):
             print(f"Loaded {len(data)} epochs, {len(data.ch_names)} channels")
         elif isinstance(data, mne.io.BaseRaw):
             print(f"Loaded raw: {len(data.ch_names)} channels")
         else:
-            print(f"Loaded {type(data).__name__}")
+            print(f"Loaded {type(data).__name__} (ad-hoc covariance will be used)")
 
     # == Detect and interpolate bad channels ==
     # Flag channels with extreme baseline variance (e.g. noisy or dead channels).
@@ -133,6 +151,14 @@ def main():
             print(f"Interpolated {len(all_new_bads)} bad channels")
         else:
             print("No bad channels detected")
+
+    # Save bad channels list (empty file if none found)
+    bad_ch_file = os.path.join('out_dir', 'bad_channels.txt')
+    with open(bad_ch_file, 'w') as f:
+        for ch in all_new_bads:
+            f.write(ch + '\n')
+    if all_new_bads:
+        print(f"Bad channels written to {bad_ch_file}")
 
     # == STEP 2: Compute noise covariance ==
     # tmin: baseline start time (seconds). Empty/""/None = use epoch start.
@@ -211,6 +237,12 @@ def main():
     ch_summary = ', '.join(f"{v} {k}" for k, v in sorted(ch_types.items()))
     report_msgs.append(f"Channels in covariance: {len(noise_cov.ch_names)} ({ch_summary})")
 
+    # Bad channel info
+    if all_new_bads:
+        report_msgs.append(f"Auto-detected and interpolated {len(all_new_bads)} bad channels: {', '.join(all_new_bads)}")
+    elif auto_bad:
+        report_msgs.append("Bad channel detection: none found")
+
     # Total baseline duration used for covariance
     if isinstance(data, mne.BaseEpochs):
         baseline_per_epoch = actual_tmax - actual_tmin  # seconds per epoch
@@ -268,6 +300,7 @@ def main():
     if ch_variance_info:
         n_types = len(ch_variance_info)
         fig_var, axes_var = plt.subplots(n_types, 1, figsize=(14, 4 * n_types), squeeze=False)
+        bad_set = set(all_new_bads)
         for ax_idx, (ch_type, (names, variances, med, thresh)) in enumerate(ch_variance_info.items()):
             ax = axes_var[ax_idx, 0]
             colors = ['red' if v > thresh * med or (med > 0 and v < med / 100) else 'steelblue'
@@ -277,10 +310,24 @@ def main():
                 ax.axhline(med, color='green', ls='--', lw=1, label='Median')
                 ax.axhline(thresh * med, color='orange', ls='--', lw=1, label=f'{thresh:.0f}x median')
             ax.set_xlabel('Channel index')
-            ax.set_ylabel('Variance')
+            ax.set_ylabel('Variance (log scale)')
+            ax.set_yscale('log')
             n_bad = sum(1 for c in colors if c == 'red')
             ax.set_title(f'{ch_type.upper()} channel variance ({n_bad} bad in red)')
             ax.legend(loc='upper right')
+
+            # Inset: MNE-native sensor topomap with bad channels marked
+            try:
+                axins = ax.inset_axes([0.78, 0.52, 0.20, 0.44])
+                # Temporarily mark detected bads so MNE highlights them
+                info_tmp = data.info.copy()
+                info_tmp['bads'] = list(bad_set)
+                mne.viz.plot_sensors(info_tmp, ch_type=ch_type, axes=axins,
+                                     show=False, show_names=False)
+                axins.set_title('Sensors', fontsize=7, pad=2)
+            except Exception as e:
+                print(f"Could not draw sensor inset for {ch_type}: {e}")
+
         plt.suptitle('Auto Bad Channel Detection', fontsize=14, y=1.01)
         plt.tight_layout()
         var_path = os.path.join('out_figs', 'channel_variance.png')
@@ -345,13 +392,6 @@ def main():
         dict_json_product['brainlife'].append({
             'type': msg_type,
             'msg': msg,
-        })
-
-    # Add bad channel info to product.json
-    if all_new_bads:
-        dict_json_product['brainlife'].append({
-            'type': 'warning',
-            'msg': f"Auto-detected and interpolated {len(all_new_bads)} bad channels: {', '.join(all_new_bads)}",
         })
 
     for img_name, img_path in [
