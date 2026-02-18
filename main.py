@@ -298,37 +298,55 @@ def main():
 
     # Plot 0: Channel variance with bad channel detection (if auto_bad was run)
     if ch_variance_info:
+        from matplotlib.patches import Patch
         n_types = len(ch_variance_info)
-        fig_var, axes_var = plt.subplots(n_types, 1, figsize=(14, 4 * n_types), squeeze=False)
+        fig_var, axes_var = plt.subplots(
+            n_types, 2,
+            figsize=(16, 4 * n_types),
+            gridspec_kw={'width_ratios': [4, 1]},
+            squeeze=False,
+        )
         bad_set = set(all_new_bads)
         for ax_idx, (ch_type, (_, variances, med, thresh)) in enumerate(ch_variance_info.items()):
+            # Left column: channel variance bar chart
             ax = axes_var[ax_idx, 0]
             colors = ['red' if v > thresh * med or (med > 0 and v < med / 100) else 'steelblue'
                        for v in variances]
             ax.bar(range(len(variances)), variances, width=1.0, color=colors)
             if med > 0:
                 ax.axhline(med, color='green', ls='--', lw=1, label='Median')
-                ax.axhline(thresh * med, color='orange', ls='--', lw=1, label=f'{thresh:.0f}x median')
+                ax.axhline(thresh * med, color='orange', ls='--', lw=1,
+                           label=f'{thresh:.0f}x median (threshold)')
             ax.set_xlabel('Channel index')
             ax.set_ylabel('Variance (log scale)')
             ax.set_yscale('log')
             n_bad = sum(1 for c in colors if c == 'red')
-            ax.set_title(f'{ch_type.upper()} channel variance ({n_bad} bad in red)')
-            ax.legend(loc='upper right')
+            ax.set_title(f'{ch_type.upper()} channel variance')
+            ax.legend(loc='upper right', fontsize=8)
 
-            # Inset: MNE-native sensor topomap with bad channels marked
+            # Right column: sensor topomap
+            ax_topo = axes_var[ax_idx, 1]
             try:
-                axins = ax.inset_axes([0.78, 0.52, 0.20, 0.44])
-                # Temporarily mark detected bads so MNE highlights them
                 info_tmp = data.info.copy()
                 info_tmp['bads'] = list(bad_set)
-                mne.viz.plot_sensors(info_tmp, ch_type=ch_type, axes=axins,
+                mne.viz.plot_sensors(info_tmp, ch_type=ch_type, axes=ax_topo,
                                      show=False, show_names=False)
-                axins.set_title('Sensors', fontsize=7, pad=2)
+                # Equal aspect ratio so head is a circle, not an oval
+                ax_topo.set_aspect('equal', adjustable='datalim')
+                ax_topo.set_title(f'{ch_type.upper()} sensors\n({n_bad} bad)', fontsize=9)
+                legend_els = [
+                    Patch(facecolor='steelblue', label='Good'),
+                    Patch(facecolor='red', label=f'Bad ({n_bad})'),
+                ]
+                ax_topo.legend(handles=legend_els, loc='lower center',
+                               fontsize=7, framealpha=0.8)
             except Exception as e:
-                print(f"Could not draw sensor inset for {ch_type}: {e}")
+                ax_topo.axis('off')
+                ax_topo.text(0.5, 0.5, f'No topomap\n{e}', ha='center', va='center',
+                             transform=ax_topo.transAxes, fontsize=7)
+                print(f"Could not draw sensor topomap for {ch_type}: {e}")
 
-        plt.suptitle('Auto Bad Channel Detection', fontsize=14, y=1.01)
+        plt.suptitle('Auto Bad Channel Detection', fontsize=14)
         plt.tight_layout()
         var_path = os.path.join('out_figs', 'channel_variance.png')
         fig_var.savefig(var_path, dpi=150, bbox_inches='tight')
