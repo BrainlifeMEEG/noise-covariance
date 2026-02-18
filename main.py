@@ -74,11 +74,12 @@ def main():
     ad_hoc_fallback = str(config.get('ad_hoc_fallback', 'false')).lower() in ('true', '1', 'yes')
 
     def _fail(msg):
-        """Write error product.json and exit."""
+        """Write error product.json and exit with code 1 (marks app as failed on Brainlife)."""
         print(f"ERROR: {msg}")
         error_product = {'brainlife': [{'type': 'error', 'msg': msg}]}
         with open('product.json', 'w') as f:
             json.dump(error_product, f)
+        sys.exit(1)
 
     # == STEP 1: Load input data ==
     # Priority: empty_room > epochs > raw > evoked
@@ -99,13 +100,11 @@ def main():
                 f"Checked: evoked='{config.get('evoked')}', epochs='{config.get('epochs')}', "
                 f"raw='{config.get('raw')}'"
             )
-            return
         if isinstance(data, mne.Evoked) and not ad_hoc_fallback:
             _fail(
                 "Only evoked data provided — cannot compute proper noise covariance from evoked. "
                 "Provide 'epochs' or 'empty_room', or enable 'ad_hoc_fallback' for a diagonal estimate."
             )
-            return
         if isinstance(data, mne.BaseEpochs):
             print(f"Loaded {len(data)} epochs, {len(data.ch_names)} channels")
         elif isinstance(data, mne.io.BaseRaw):
