@@ -93,6 +93,7 @@ def main():
         try:
             data = load_input_data(config)
         except (FileNotFoundError, Exception) as e:
+            # No input at all is always an error — ad_hoc_fallback requires at least evoked data.
             _fail(
                 f"No valid input provided. Provide 'epochs' or 'empty_room' in config.json. "
                 f"Checked: evoked='{config.get('evoked')}', epochs='{config.get('epochs')}', "
@@ -301,7 +302,7 @@ def main():
         n_types = len(ch_variance_info)
         fig_var, axes_var = plt.subplots(n_types, 1, figsize=(14, 4 * n_types), squeeze=False)
         bad_set = set(all_new_bads)
-        for ax_idx, (ch_type, (names, variances, med, thresh)) in enumerate(ch_variance_info.items()):
+        for ax_idx, (ch_type, (_, variances, med, thresh)) in enumerate(ch_variance_info.items()):
             ax = axes_var[ax_idx, 0]
             colors = ['red' if v > thresh * med or (med > 0 and v < med / 100) else 'steelblue'
                        for v in variances]
