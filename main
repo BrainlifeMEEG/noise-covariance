@@ -15,4 +15,4 @@ mkdir -p out_dir
 mkdir -p out_figs
 mkdir -p out_dir_report
 
-singularity exec docker://aunnikri642/mne-xvfb python3 main.py
+singularity exec docker://aunnikri642/mne-1.11-xvfb:latest python3 main.py
