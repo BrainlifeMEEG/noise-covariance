@@ -15,4 +15,4 @@ mkdir -p out_dir
 mkdir -p out_figs
 mkdir -p out_dir_report
 
-singularity exec docker://aunnikri642/test:latest python3 main.py
+singularity exec docker://bacaron/mne-freesurfer:mne-1.11.0_freesurfer-7.4.1 python3 main.py
