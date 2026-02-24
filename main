@@ -22,8 +22,15 @@ export XDG_RUNTIME_DIR=/tmp/runtime-root
 mkdir -p /tmp/runtime-root
 
 if [ -f /usr/bin/singularity ]; then
-    singularity exec docker://aunnikri642/app-freesurfer-mne-source-recon \
-        xvfb-run -a -s '-screen 0 1024x768x24 +extension GLX +render' python3 main.py
+    SIF=/tmp/app-source-recon.sif
+    for i in 1 2 3; do
+        singularity pull --force $SIF docker://bacaron/mne-freesurfer:mne-1.11.0_freesurfer-7.4.1 && break
+        echo "Pull attempt $i failed, retrying in 60s..."
+        sleep 60
+    done
+    singularity exec $SIF python3 main.py
+    # xvfb-run -a -s '-screen 0 1024x768x24 +extension GLX +render' python3 main.py
 else
-    xvfb-run -a python3 main.py
+    # xvfb-run -a python3 main.py
+    python3 main.py
 fi
