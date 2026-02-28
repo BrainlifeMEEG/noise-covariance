@@ -13,6 +13,6 @@ set -e
 
 mkdir -p out_dir
 mkdir -p out_figs
-mkdir -p out_dir_report
+mkdir -p out_report
 
 singularity exec docker://brainlife/mne:1.2.1 python3 main.py

@@ -60,7 +60,7 @@ def load_config():
 def main():
     # Clean and make output dirs
     import shutil
-    for d in ['out_dir', 'out_figs', 'out_dir_report']:
+    for d in ['out_dir', 'out_figs', 'out_report']:
         if os.path.exists(d):
             shutil.rmtree(d)
         os.makedirs(d)
@@ -469,7 +469,7 @@ def main():
             print(f"Could not plot topomaps: {e}")
 
     # Save HTML report
-    report_path = os.path.join('out_dir_report', 'report.html')
+    report_path = os.path.join('out_report', 'report.html')
     report.save(report_path, overwrite=True)
     print(f"Report saved to {report_path}")
 
