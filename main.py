@@ -112,6 +112,22 @@ def main():
         else:
             print(f"Loaded {type(data).__name__} (ad-hoc covariance will be used)")
 
+    # == ICA: apply component rejection before covariance ==
+    ica_file = config.get('ica')
+    ica_exclude_str = config.get('ica_exclude', '')
+    if ica_file and os.path.exists(str(ica_file)):
+        ica = mne.preprocessing.read_ica(ica_file)
+        if ica_exclude_str:
+            ica.exclude = [int(x.strip()) for x in str(ica_exclude_str).split(',') if x.strip()]
+        if isinstance(data, mne.BaseEpochs):
+            ica.apply(data)
+            print(f"ICA applied to epochs: excluded components {ica.exclude}")
+        elif isinstance(data, mne.io.BaseRaw):
+            ica.apply(data)
+            print(f"ICA applied to raw: excluded components {ica.exclude}")
+    elif ica_file:
+        print(f"WARNING: ICA file not found: {ica_file} — skipping ICA apply")
+
     # == Detect and interpolate bad channels ==
     # Flag channels with extreme baseline variance (e.g. noisy or dead channels).
     # These crush the covariance colorbar and degrade the estimate.
