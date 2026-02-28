@@ -160,9 +160,11 @@ def main():
             print(f"Could not plot ICA properties: {e}")
 
         # 3. Source time series — use evoked (averaged epochs) for clean time course
+        # Force matplotlib backend to avoid PyQtGraph crash in headless Singularity
         try:
+            mne.viz.set_browser_backend('matplotlib')
             evoked_for_sources = data.average() if isinstance(data, mne.BaseEpochs) else data
-            fig_sources = ica.plot_sources(evoked_for_sources, show=False)
+            fig_sources = ica.plot_sources(evoked_for_sources, picks=ica.exclude, show=False)
             p = os.path.join('out_figs', 'ica_sources.png')
             fig_sources.savefig(p, dpi=150, bbox_inches='tight')
             plt.close(fig_sources)
