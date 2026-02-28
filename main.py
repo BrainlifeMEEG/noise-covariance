@@ -417,6 +417,12 @@ def main():
     # == STEP 4: Save outputs ==
     save_outputs(noise_cov=noise_cov, out_dir='out_dir')
 
+    # Save ICA-cleaned epochs if we have them
+    if isinstance(data, mne.BaseEpochs):
+        epo_path = os.path.join('out_dir', 'meg-epo.fif')
+        data.save(epo_path, overwrite=True)
+        print(f"Saved cleaned epochs: {epo_path}")
+
     # == STEP 5: product.json with info + figure thumbnails ==
     dict_json_product = {'brainlife': []}
 
