@@ -279,6 +279,16 @@ def main():
     else:
         rank = None
 
+    # Explicitly drop bad channels before covariance — MNE should exclude them
+    # automatically but this guarantees it and also reduces matrix size
+    bads_before_cov = list(data.info['bads'])
+    if bads_before_cov:
+        print(f"Bad channels before covariance ({len(bads_before_cov)}): {bads_before_cov}")
+        data = data.copy().drop_channels(bads_before_cov)
+        print(f"Dropped bad channels. Remaining: {len(data.ch_names)} channels")
+    else:
+        print("No bad channels in info['bads'] — using all channels")
+
     import time
     t0 = time.time()
     noise_cov = compute_noise_covariance(data, tmin=tmin, tmax=tmax, method=method, rank=rank)
