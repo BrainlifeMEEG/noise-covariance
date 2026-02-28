@@ -17,7 +17,6 @@ Outputs: noise-cov.fif, MNE HTML report with covariance plots.
 import os
 import sys
 import json
-import base64
 
 # When deployed on Brainlife: brainlife_utils/ and source_recon_utils.py are in this directory.
 # When running locally in the monorepo: they're in the parent directory.
@@ -160,7 +159,19 @@ def main():
         except Exception as e:
             print(f"Could not plot ICA properties: {e}")
 
-        # 3. Overlay: signal before (red) vs after (black) ICA cleaning
+        # 3. Source time series of excluded components
+        try:
+            fig_sources = ica.plot_sources(data, picks=ica.exclude, show=False,
+                                           show_scrollbars=False)
+            p = os.path.join('out_figs', 'ica_sources.png')
+            fig_sources.savefig(p, dpi=150, bbox_inches='tight')
+            plt.close(fig_sources)
+            ica_fig_paths.append(('ICA Source Time Series (excluded)', p))
+            print("Saved ICA sources plot")
+        except Exception as e:
+            print(f"Could not plot ICA sources: {e}")
+
+        # 4. Overlay: signal before (red) vs after (black) ICA cleaning
         try:
             fig_overlay = ica.plot_overlay(data, exclude=ica.exclude, picks='eeg', show=False)
             p = os.path.join('out_figs', 'ica_overlay.png')
@@ -482,27 +493,7 @@ def main():
             'msg': msg,
         })
 
-    for img_name, img_path in ica_fig_paths:
-        if os.path.exists(img_path):
-            data_uri = base64.b64encode(open(img_path, 'rb').read()).decode('utf-8')
-            dict_json_product['brainlife'].append({
-                'type': 'image/png', 'name': img_name, 'base64': data_uri,
-            })
-
-    for img_name, img_path in [
-        ('Channel Variance', 'out_figs/channel_variance.png'),
-        ('Covariance Matrix', 'out_figs/noise_covariance.png'),
-        ('Channel Noise Spectra', 'out_figs/noise_spectra.png'),
-        ('Whitened Evoked', 'out_figs/whitened_evoked.png'),
-        ('Covariance Topomaps', 'out_figs/covariance_topomaps.png'),
-    ]:
-        if os.path.exists(img_path):
-            data_uri = base64.b64encode(open(img_path, 'rb').read()).decode('utf-8')
-            dict_json_product['brainlife'].append({
-                'type': 'image/png',
-                'name': img_name,
-                'base64': data_uri,
-            })
+    # Images go into the HTML report only — not product.json (keeps it small)
 
     with open('product.json', 'w') as f:
         json.dump(dict_json_product, f)
