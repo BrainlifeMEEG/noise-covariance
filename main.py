@@ -128,6 +128,49 @@ def main():
     elif ica_file:
         print(f"WARNING: ICA file not found: {ica_file} — skipping ICA apply")
 
+    # == ICA visualizations (excluded components only) ==
+    ica_fig_paths = []
+    if ica_file and os.path.exists(str(ica_file)) and ica.exclude:
+        # 1. Topographies of excluded components
+        try:
+            figs = ica.plot_components(picks=ica.exclude, show=False)
+            if not isinstance(figs, list):
+                figs = [figs]
+            for i, fig in enumerate(figs):
+                p = os.path.join('out_figs', f'ica_topographies_{i}.png')
+                fig.savefig(p, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                ica_fig_paths.append(('ICA Excluded Component Topographies', p))
+            print(f"Saved ICA topographies for components {ica.exclude}")
+        except Exception as e:
+            print(f"Could not plot ICA topographies: {e}")
+
+        # 2. Properties of each excluded component (topomap + spectrum + epochs image)
+        try:
+            figs = ica.plot_properties(data, picks=ica.exclude, show=False)
+            if not isinstance(figs, list):
+                figs = [figs]
+            for i, fig in enumerate(figs):
+                comp_idx = ica.exclude[i] if i < len(ica.exclude) else i
+                p = os.path.join('out_figs', f'ica_properties_comp{comp_idx:03d}.png')
+                fig.savefig(p, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                ica_fig_paths.append((f'ICA Component {comp_idx} Properties', p))
+            print(f"Saved ICA properties for components {ica.exclude}")
+        except Exception as e:
+            print(f"Could not plot ICA properties: {e}")
+
+        # 3. Overlay: signal before (red) vs after (black) ICA cleaning
+        try:
+            fig_overlay = ica.plot_overlay(data, exclude=ica.exclude, picks='eeg', show=False)
+            p = os.path.join('out_figs', 'ica_overlay.png')
+            fig_overlay.savefig(p, dpi=150, bbox_inches='tight')
+            plt.close(fig_overlay)
+            ica_fig_paths.append(('ICA Overlay (before/after cleaning)', p))
+            print("Saved ICA overlay plot")
+        except Exception as e:
+            print(f"Could not plot ICA overlay: {e}")
+
     # == Detect and interpolate bad channels ==
     # Flag channels with extreme baseline variance (e.g. noisy or dead channels).
     # These crush the covariance colorbar and degrade the estimate.
@@ -312,6 +355,11 @@ def main():
     # == STEP 3: Generate plots and report ==
     report = mne.Report(title='Noise Covariance Report')
 
+    # ICA plots (if any)
+    for title, p in ica_fig_paths:
+        if os.path.exists(p):
+            report.add_image(p, title=title)
+
     # Plot 0: Channel variance with bad channel detection (if auto_bad was run)
     if ch_variance_info:
         from matplotlib.patches import Patch
@@ -433,6 +481,13 @@ def main():
             'type': msg_type,
             'msg': msg,
         })
+
+    for img_name, img_path in ica_fig_paths:
+        if os.path.exists(img_path):
+            data_uri = base64.b64encode(open(img_path, 'rb').read()).decode('utf-8')
+            dict_json_product['brainlife'].append({
+                'type': 'image/png', 'name': img_name, 'base64': data_uri,
+            })
 
     for img_name, img_path in [
         ('Channel Variance', 'out_figs/channel_variance.png'),
