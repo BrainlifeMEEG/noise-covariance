@@ -997,7 +997,7 @@ def save_outputs(stc=None, inverse_operator=None, evoked=None,
         saved.append(f"Evoked → {evo_path}")
 
     if noise_cov is not None:
-        cov_path = os.path.join(out_dir, 'noise-cov.fif')
+        cov_path = os.path.join(out_dir, 'cov.fif')
         mne.write_cov(cov_path, noise_cov, overwrite=True)
         saved.append(f"Noise covariance → {cov_path}")
 
