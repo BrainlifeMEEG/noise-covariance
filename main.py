@@ -490,7 +490,8 @@ def main():
 
     # Save ICA-cleaned epochs if we have them
     if isinstance(data, mne.BaseEpochs):
-        epo_path = os.path.join('out_dir', 'meg-epo.fif')
+        os.makedirs('out_dir_misc', exist_ok=True)
+        epo_path = os.path.join('out_dir_misc', 'meg-epo.fif')
         data.save(epo_path, overwrite=True)
         print(f"Saved cleaned epochs: {epo_path}")
 
