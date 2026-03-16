@@ -152,13 +152,6 @@ def main():
         else:
             print("No bad channels detected")
 
-    # Save bad channels list (empty file if none found)
-    bad_ch_file = os.path.join('out_dir', 'bad_channels.txt')
-    with open(bad_ch_file, 'w') as f:
-        for ch in all_new_bads:
-            f.write(ch + '\n')
-    if all_new_bads:
-        print(f"Bad channels written to {bad_ch_file}")
 
     # == STEP 2: Compute noise covariance ==
     # tmin: baseline start time (seconds). Empty/""/None = use epoch start.
