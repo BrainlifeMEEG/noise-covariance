@@ -1,4 +1,4 @@
-# app-noise-covariance
+# noise-covariance
 
 Brainlife App to compute noise covariance matrix from MEG/EEG data using MNE-Python's [mne.compute_covariance](https://mne.tools/stable/generated/mne.compute_covariance.html) function.
 
