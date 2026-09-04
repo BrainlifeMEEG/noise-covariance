@@ -39,6 +39,7 @@ import matplotlib.pyplot as plt
 from source_recon_utils import (
     load_input_data, compute_noise_covariance, save_outputs,
 )
+from brainlife_utils import save_figure_with_base64
 
 
 def load_config():
@@ -288,6 +289,15 @@ def main():
 
     # == STEP 3: Generate plots and report ==
     report = mne.Report(title='Noise Covariance Report')
+    # Base64 thumbnails for product.json, keyed the same as the img_name/
+    # img_path pairs in STEP 5 below. Rendered at a much lower dpi than the
+    # full-res out_figs/ files (via brainlife_utils' save_figure_with_base64,
+    # the same dual-dpi pattern every other app in this repo uses) -- STEP 5
+    # used to re-read the full 150dpi PNG straight off disk and embed that
+    # verbatim, which for ~380-channel MEG+EEG data (esp. the covariance
+    # matrix and whitened-evoked plots) pushed product.json's total size
+    # past Amaretti's 1MB cap. Confirmed on the ICM cluster.
+    fig_base64 = {}
 
     # Plot 0: Channel variance with bad channel detection (if auto_bad was run)
     if ch_variance_info:
@@ -342,8 +352,7 @@ def main():
         plt.suptitle('Auto Bad Channel Detection', fontsize=14)
         plt.tight_layout()
         var_path = os.path.join('out_figs', 'channel_variance.png')
-        fig_var.savefig(var_path, dpi=150, bbox_inches='tight')
-        plt.close(fig_var)
+        fig_base64['Channel Variance'] = save_figure_with_base64(fig_var, var_path)
         report.add_image(var_path, title='Channel Variance (Bad Channel Detection)')
 
     # Plot 1: Covariance matrix + channel noise spectra (mne.viz.plot_cov)
@@ -351,13 +360,11 @@ def main():
         fig_cov, fig_spectra = mne.viz.plot_cov(noise_cov, info, show=False)
 
         cov_path = os.path.join('out_figs', 'noise_covariance.png')
-        fig_cov.savefig(cov_path, dpi=150, bbox_inches='tight')
-        plt.close(fig_cov)
+        fig_base64['Covariance Matrix'] = save_figure_with_base64(fig_cov, cov_path)
         report.add_image(cov_path, title='Covariance Matrix')
 
         spectra_path = os.path.join('out_figs', 'noise_spectra.png')
-        fig_spectra.savefig(spectra_path, dpi=150, bbox_inches='tight')
-        plt.close(fig_spectra)
+        fig_base64['Channel Noise Spectra'] = save_figure_with_base64(fig_spectra, spectra_path)
         report.add_image(spectra_path, title='Channel Noise Spectra')
     except Exception as e:
         print(f"Could not plot covariance: {e}")
@@ -368,8 +375,7 @@ def main():
             evoked = data.average()
             fig_white = evoked.plot_white(noise_cov, show=False)
             white_path = os.path.join('out_figs', 'whitened_evoked.png')
-            fig_white.savefig(white_path, dpi=150, bbox_inches='tight')
-            plt.close(fig_white)
+            fig_base64['Whitened Evoked'] = save_figure_with_base64(fig_white, white_path)
             report.add_image(white_path, title='Whitened Evoked (GFP)')
         except Exception as e:
             print(f"Could not plot whitened evoked: {e}")
@@ -380,8 +386,7 @@ def main():
             evoked = data.average()
             fig_topo = noise_cov.plot_topomap(evoked.info, show=False)
             topo_path = os.path.join('out_figs', 'covariance_topomaps.png')
-            fig_topo.savefig(topo_path, dpi=150, bbox_inches='tight')
-            plt.close(fig_topo)
+            fig_base64['Covariance Topomaps'] = save_figure_with_base64(fig_topo, topo_path)
             report.add_image(topo_path, title='Noise Covariance Topomaps')
         except Exception as e:
             print(f"Could not plot topomaps: {e}")
@@ -405,20 +410,15 @@ def main():
             'msg': msg,
         })
 
-    for img_name, img_path in [
-        ('Channel Variance', 'out_figs/channel_variance.png'),
-        ('Covariance Matrix', 'out_figs/noise_covariance.png'),
-        ('Channel Noise Spectra', 'out_figs/noise_spectra.png'),
-        ('Whitened Evoked', 'out_figs/whitened_evoked.png'),
-        ('Covariance Topomaps', 'out_figs/covariance_topomaps.png'),
-    ]:
-        if os.path.exists(img_path):
-            data_uri = base64.b64encode(open(img_path, 'rb').read()).decode('utf-8')
-            dict_json_product['brainlife'].append({
-                'type': 'image/png',
-                'name': img_name,
-                'base64': data_uri,
-            })
+    # Use the low-dpi thumbnails computed alongside each figure above (see
+    # fig_base64), not a raw re-read of the full 150dpi out_figs/ file --
+    # that combined easily exceeded Amaretti's 1MB product.json cap.
+    for img_name, data_uri in fig_base64.items():
+        dict_json_product['brainlife'].append({
+            'type': 'image/png',
+            'name': img_name,
+            'base64': data_uri,
+        })
 
     with open('product.json', 'w') as f:
         json.dump(dict_json_product, f)
