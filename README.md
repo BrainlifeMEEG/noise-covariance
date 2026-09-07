@@ -18,7 +18,7 @@ The app supports three input types:
 
 ## Outputs
 
-- **noise-cov.fif**: Noise covariance matrix in MNE format (used by the inverse operator app)
+- **cov.fif**: Noise covariance matrix in MNE format (used by the inverse operator app)
 - **product.json**: Brainlife report with quality diagnostics and visualizations
 - **eigenvalue_spectrum.png**: Eigenvalue spectrum of the covariance matrix
 - **noise_covariance.png**: Covariance matrix visualization
