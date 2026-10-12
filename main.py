@@ -134,8 +134,12 @@ if data is None:
             if epochs_file.endswith('.bdf'):
                 _bdf_raw = mne.io.read_raw_bdf(epochs_file, preload=True)
                 _bdf_events = mne.find_events(_bdf_raw)
-                _ep_tmin = float(config.get('tmin', -0.2))
-                _ep_tmax = float(config.get('tmax', 0.5))
+                # tmin/tmax arrive as strings; the UI default for tmin is literally "None",
+                # and a blank field becomes Python None. Guard both before float().
+                _tmin_raw = config.get('tmin')
+                _tmax_raw = config.get('tmax')
+                _ep_tmin = -0.2 if _tmin_raw in (None, '', 'None') else float(_tmin_raw)
+                _ep_tmax = 0.5 if _tmax_raw in (None, '', 'None') else float(_tmax_raw)
                 epochs = mne.Epochs(_bdf_raw, _bdf_events, tmin=_ep_tmin, tmax=_ep_tmax, preload=True)
             else:
                 epochs = mne.read_epochs(epochs_file, preload=True)
@@ -155,8 +159,12 @@ if data is None:
         elif raw_file and os.path.exists(raw_file):
             _raw = mne.io.read_raw_fif(raw_file, preload=True)
             _events = mne.find_events(_raw)
-            _ep_tmin = float(config.get('tmin', -0.2))
-            _ep_tmax = float(config.get('tmax', 0.5))
+            # tmin/tmax arrive as strings; the UI default for tmin is literally "None",
+            # and a blank field becomes Python None. Guard both before float().
+            _tmin_raw = config.get('tmin')
+            _tmax_raw = config.get('tmax')
+            _ep_tmin = -0.2 if _tmin_raw in (None, '', 'None') else float(_tmin_raw)
+            _ep_tmax = 0.5 if _tmax_raw in (None, '', 'None') else float(_tmax_raw)
             epochs = mne.Epochs(_raw, _events, tmin=_ep_tmin, tmax=_ep_tmax, preload=True)
             print(f"Created {len(epochs)} epochs from raw {raw_file}")
             # Add EEG average reference projector if missing (required for inverse)
@@ -210,7 +218,8 @@ if data is None:
 # Done PER CHANNEL TYPE since MEG grad/mag/EEG have very different scales.
 auto_bad_str = str(config.get('auto_bad_channels', 'true')).lower()
 auto_bad = auto_bad_str in ('true', '1', 'yes', '')
-bad_ch_threshold = float(config.get('bad_channel_threshold', 5))
+_bad_thr_raw = config.get('bad_channel_threshold')
+bad_ch_threshold = 5.0 if _bad_thr_raw in (None, '', 'None') else float(_bad_thr_raw)
 all_new_bads = []
 ch_variance_info = {}  # for plotting: {ch_type: (ch_names, variances, median, threshold)}
 
