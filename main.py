@@ -35,6 +35,8 @@ import json
 from collections import Counter
 import numpy as np
 import mne
+
+mne.set_log_level('WARNING')
 import matplotlib.pyplot as plt
 
 # Import shared utilities

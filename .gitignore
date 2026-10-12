@@ -1,7 +1,6 @@
 /out_dir/
 /out_figs/
 /out_report/
-/config.json
 /product.json
 __pycache__/
 *.pyc

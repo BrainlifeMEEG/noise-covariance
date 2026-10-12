@@ -1,0 +1,14 @@
+{
+    "epochs": "",
+    "empty_room": "",
+    "evoked": "",
+    "raw": "",
+    "mne": "",
+    "method": "shrunk",
+    "tmin": "None",
+    "tmax": "0",
+    "rank": "None",
+    "auto_bad_channels": true,
+    "bad_channel_threshold": 5,
+    "ad_hoc_fallback": false
+}
