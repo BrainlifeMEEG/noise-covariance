@@ -192,6 +192,7 @@ if data is None:
         )
         print(f"ERROR: {_msg}")
         add_info_to_product(product_items, _msg, 'error')
+        print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
         create_product_json(product_items)
         sys.exit(1)
 
@@ -202,6 +203,7 @@ if data is None:
         )
         print(f"ERROR: {_msg}")
         add_info_to_product(product_items, _msg, 'error')
+        print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
         create_product_json(product_items)
         sys.exit(1)
 
