@@ -216,7 +216,7 @@ if data is None:
 # Flag channels with extreme baseline variance (e.g. noisy or dead channels).
 # These crush the covariance colorbar and degrade the estimate.
 # Done PER CHANNEL TYPE since MEG grad/mag/EEG have very different scales.
-auto_bad_str = str(config.get('auto_bad_channels', 'true')).lower()
+auto_bad_str = str(config.get('auto_bad_channels', 'false')).lower()
 auto_bad = auto_bad_str in ('true', '1', 'yes', '')
 _bad_thr_raw = config.get('bad_channel_threshold')
 bad_ch_threshold = 5.0 if _bad_thr_raw in (None, '', 'None') else float(_bad_thr_raw)

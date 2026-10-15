@@ -36,7 +36,7 @@ The app generates:
 | `tmin` | string | `""` (→ `None`) | Lower time bound (seconds) for the baseline/analysis window. Empty or `"None"` = epoch start (epochs input) / recording start (raw/empty-room input). |
 | `tmax` | string | `""` (→ `None`) | Upper time bound (seconds) for the baseline/analysis window. Empty or `"None"` = epoch end (epochs input) / recording end (raw/empty-room input). |
 | `rank` | string | `""` (→ `None`, auto-detect) | Rank estimation. `None`/empty = auto-detect from data, `info` = from measurement info (e.g. after Maxwell filtering), `full` = assume full rank, or a JSON dict, e.g. `{"eeg": 45}`. |
-| `auto_bad_channels` | boolean | `true` | Automatically flag channels (per type: EEG/grad/mag) whose baseline variance is far from the per-type median and interpolate them before computing the covariance. |
+| `auto_bad_channels` | boolean | `false` | Automatically flag channels (per type: EEG/grad/mag) whose baseline variance is far from the per-type median and interpolate them before computing the covariance. |
 | `bad_channel_threshold` | number | `5` | Multiplier on the per-type median baseline variance above which a channel is flagged bad (channels below `median/100` are also flagged as dead). Used only when `auto_bad_channels` is `true`. |
 | `ad_hoc_fallback` | boolean | `false` | If `true`, allows falling back to a diagonal ad-hoc covariance (`mne.make_ad_hoc_cov`) when only evoked data is available. If `false` (default), that case is a fatal error. |
 
@@ -78,7 +78,7 @@ Example `config.json`:
     "tmin": "",
     "tmax": "0.0",
     "rank": "",
-    "auto_bad_channels": true,
+    "auto_bad_channels": false,
     "bad_channel_threshold": 5,
     "ad_hoc_fallback": false
 }

@@ -8,7 +8,7 @@
     "tmin": "None",
     "tmax": "0",
     "rank": "None",
-    "auto_bad_channels": true,
+    "auto_bad_channels": false,
     "bad_channel_threshold": 5,
     "ad_hoc_fallback": false
 }
