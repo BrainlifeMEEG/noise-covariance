@@ -272,6 +272,21 @@ else:
     tmax = float(tmax_val)
 
 method_str = config.get('method') or 'shrunk'
+# Validate before use. An unrecognised value used to reach compute_covariance,
+# raise, and get swallowed into a silent ad-hoc diagonal covariance.
+_ALLOWED_METHODS = ('auto', 'shrunk', 'empirical', 'diagonal_fixed',
+                    'ledoit_wolf', 'oas', 'shrinkage', 'pca', 'factor_analysis')
+if method_str not in _ALLOWED_METHODS:
+    add_info_to_product(
+        product_items,
+        f"FATAL: unknown method {method_str!r}. Allowed: "
+        + ", ".join(_ALLOWED_METHODS) + ".",
+        "error"
+    )
+    print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
+    create_product_json(product_items)
+    sys.exit(1)
+
 if method_str == 'auto':
     method = ['shrunk', 'empirical']
 else:
@@ -305,9 +320,19 @@ else:
 
 t0 = time.time()
 
-# Evoked -> ad-hoc diagonal covariance
+used_ad_hoc = False
+
+# Evoked -> ad-hoc diagonal covariance (only reachable with ad_hoc_fallback on;
+# the guard above exits otherwise)
 if isinstance(data, mne.Evoked):
-    print("Input is Evoked — using ad-hoc diagonal noise covariance")
+    add_info_to_product(
+        product_items,
+        "Input is Evoked only - using an ad-hoc DIAGONAL covariance. This is not "
+        "a real noise estimate; provide epochs or an empty-room recording for a "
+        "usable one.",
+        "warning"
+    )
+    used_ad_hoc = True
     noise_cov = mne.make_ad_hoc_cov(data.info)
 
 # Raw (empty-room) -> compute from recording
@@ -331,7 +356,30 @@ elif isinstance(data, mne.io.BaseRaw):
                 raise
         print("Computed noise covariance from raw recording")
     except Exception as e:
-        print(f"Warning: raw covariance failed ({e}), using ad-hoc")
+        # An ad-hoc diagonal covariance is a fundamentally different estimate,
+        # not a graceful degradation: it inflates source amplitudes and shifts
+        # peak timing. Only substitute it when the user explicitly asked for it.
+        if not ad_hoc_fallback:
+            add_info_to_product(
+                product_items,
+                f"FATAL: raw covariance computation failed: {e}\n"
+                "Not substituting an ad-hoc diagonal covariance, which would be "
+                "scientifically different rather than slightly worse. Fix the "
+                "input or set 'ad_hoc_fallback' to true to accept a diagonal "
+                "estimate.",
+                "error"
+            )
+            print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
+            create_product_json(product_items)
+            sys.exit(1)
+        add_info_to_product(
+            product_items,
+            f"WARNING: raw covariance failed ({e}); using an ad-hoc DIAGONAL "
+            "covariance because 'ad_hoc_fallback' is enabled. This is not a real "
+            "noise estimate - source amplitudes and peak timing will be wrong.",
+            "warning"
+        )
+        used_ad_hoc = True
         noise_cov = mne.make_ad_hoc_cov(data.info)
 
 # Epochs -> compute from baseline
@@ -357,8 +405,29 @@ else:
         print(f"Computed noise covariance from {len(data)} epochs "
               f"(baseline [{tmin_str}, {tmax_str}]s)")
     except Exception as e:
-        print(f"Warning: covariance computation failed ({e}), "
-              f"using ad-hoc diagonal covariance")
+        # See the raw path above - ad-hoc is a different estimate, not a fallback.
+        if not ad_hoc_fallback:
+            add_info_to_product(
+                product_items,
+                f"FATAL: covariance computation failed: {e}\n"
+                "Not substituting an ad-hoc diagonal covariance, which would be "
+                "scientifically different rather than slightly worse. Fix the "
+                "input or set 'ad_hoc_fallback' to true to accept a diagonal "
+                "estimate.",
+                "error"
+            )
+            print(f"ERROR: {product_items[-1]['msg']}", file=sys.stderr)
+            create_product_json(product_items)
+            sys.exit(1)
+        add_info_to_product(
+            product_items,
+            f"WARNING: covariance computation failed ({e}); using an ad-hoc "
+            "DIAGONAL covariance because 'ad_hoc_fallback' is enabled. This is "
+            "not a real noise estimate - source amplitudes and peak timing will "
+            "be wrong.",
+            "warning"
+        )
+        used_ad_hoc = True
         noise_cov = mne.make_ad_hoc_cov(data.info)
 
 cov_time = time.time() - t0
@@ -409,7 +478,7 @@ elif isinstance(data, mne.io.BaseRaw):
 n_samples = noise_cov.nfree + 1
 samples_per_ch = n_samples / max(len(noise_cov.ch_names), 1)
 total_data_sec = n_samples / info['sfreq']
-cov_method = noise_cov.get('method', method_str)
+cov_method = 'ad-hoc diagonal' if used_ad_hoc else noise_cov.get('method', method_str)
 report_msgs.append(f"Method: {cov_method}")
 report_msgs.append(f"Samples used: {n_samples} ({samples_per_ch:.1f} per channel, {total_data_sec:.1f} s of data)")
 if samples_per_ch < 5:
@@ -419,7 +488,13 @@ if samples_per_ch < 5:
     )
 
 # Rank and condition number
-evals = np.linalg.eigvalsh(noise_cov.data)
+# An ad-hoc covariance is diagonal and stores .data as a 1-D vector, which
+# eigvalsh rejects. Its eigenvalues are just the diagonal entries.
+_cov_data = np.asarray(noise_cov.data)
+if _cov_data.ndim == 1:
+    evals = np.sort(_cov_data)
+else:
+    evals = np.linalg.eigvalsh(_cov_data)
 n_zero = np.sum(evals < evals[-1] * 1e-10)
 eff_rank = len(evals) - n_zero
 # Skip near-zero eigenvalues (from avg reference, projectors) for condition number
