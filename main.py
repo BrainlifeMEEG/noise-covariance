@@ -345,13 +345,13 @@ elif isinstance(data, mne.io.BaseRaw):
         if tmax is not None:
             raw_kwargs['tmax'] = tmax
         try:
-            noise_cov = mne.compute_raw_covariance(data, method=method, rank=rank, verbose=True, **raw_kwargs)
+            noise_cov = mne.compute_raw_covariance(data, method=method, rank=rank, **raw_kwargs)
         except ValueError as e:
             # MNE 1.0.2 rejects the full method list if any entry requires
             # sklearn, even if 'empirical' is also listed.
             if 'scikit-learn' in str(e) and method != ['empirical']:
                 print("scikit-learn not available, falling back to method='empirical'")
-                noise_cov = mne.compute_raw_covariance(data, method=['empirical'], rank=rank, verbose=True, **raw_kwargs)
+                noise_cov = mne.compute_raw_covariance(data, method=['empirical'], rank=rank, **raw_kwargs)
             else:
                 raise
         print("Computed noise covariance from raw recording")
@@ -391,13 +391,13 @@ else:
         if tmax is not None:
             cov_kwargs['tmax'] = tmax
         try:
-            noise_cov = mne.compute_covariance(data, method=method, rank=rank, verbose=True, **cov_kwargs)
+            noise_cov = mne.compute_covariance(data, method=method, rank=rank, **cov_kwargs)
         except ValueError as e:
             # MNE 1.0.2 rejects the full method list if any entry requires
             # sklearn, even if 'empirical' is also listed.
             if 'scikit-learn' in str(e) and method != ['empirical']:
                 print("scikit-learn not available, falling back to method='empirical'")
-                noise_cov = mne.compute_covariance(data, method=['empirical'], rank=rank, verbose=True, **cov_kwargs)
+                noise_cov = mne.compute_covariance(data, method=['empirical'], rank=rank, **cov_kwargs)
             else:
                 raise
         tmin_str = f"{tmin}" if tmin is not None else "epoch start"
@@ -661,12 +661,22 @@ if isinstance(data, mne.BaseEpochs):
 
 # Save HTML report
 report_path = os.path.join('out_report', 'report.html')
-report.save(report_path, overwrite=True)
+# A failed report must not cost us product.json: the real output is
+# already on disk by this point, and an unguarded failure here would
+# exit with a bare traceback and no diagnostics at all.
+try:
+    report.save(report_path, overwrite=True)
+except Exception as e:
+    add_info_to_product(product_items, f"Could not save HTML report: {e}", "warning")
 print(f"Report saved to {report_path}")
 
 # == STEP 4: Save outputs ==
 cov_path_out = os.path.join('out_dir', 'cov.fif')
 mne.write_cov(cov_path_out, noise_cov, overwrite=True)
+# Spec requires the written file to load with its MNE reader before
+# success is reported, so a truncated or corrupt write fails here
+# rather than three apps downstream.
+mne.read_cov(cov_path_out)
 print(f"Saved: Noise covariance -> {cov_path_out}")
 
 # == STEP 5: product.json with info + figure thumbnails ==
