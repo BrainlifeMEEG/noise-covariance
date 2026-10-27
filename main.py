@@ -603,37 +603,33 @@ if ch_variance_info:
 
 # Plot 1: covariance matrix + channel noise spectra.
 # mne.viz.plot_cov indexes .data two-dimensionally, so it raises IndexError on an
-# ad-hoc covariance, whose .data is a 1-D vector of variances. That used to leave
-# out_figs empty with the reason going to stdout only. Plot the variances directly
-# instead - for a diagonal covariance that is the whole content of the matrix.
+# ad-hoc covariance, whose .data is a 1-D vector of variances. Rather than draw a
+# different kind of figure for that case, rebuild the diagonal as a dense NxN
+# matrix and hand it to the same plotter: identical colormap, layout and
+# colorbar, with the off-diagonal simply empty. The title says it is ad-hoc.
 try:
-    if used_ad_hoc or _cov_data.ndim == 1:
+    if used_ad_hoc or np.asarray(noise_cov.data).ndim == 1:
         _var = np.asarray(noise_cov.data).ravel()
-        _all_types = dict(zip(info['ch_names'], info.get_channel_types()))
-        _types = [_all_types.get(ch, 'unknown') for ch in noise_cov.ch_names]
-        fig_cov, _ax = plt.subplots(figsize=(10, 4))
-        for _t in sorted(set(_types)):
-            _idx = [i for i, t in enumerate(_types) if t == _t]
-            _ax.semilogy(_idx, _var[_idx], '.', label=f'{_t} (n={len(_idx)})')
-        _ax.set_xlabel('channel index')
-        _ax.set_ylabel('assumed variance')
-        _ax.set_title('Ad-hoc diagonal covariance — assumed per-channel variance\n'
-                      '(not estimated from data)')
-        _ax.legend(fontsize=8)
-        _ax.grid(True, alpha=0.3)
-        cov_path = os.path.join('out_figs', 'noise_covariance.png')
-        fig_base64['Covariance Diagonal (ad-hoc)'] = save_figure_with_base64(fig_cov, cov_path)
-        report.add_image(cov_path, title='Covariance Diagonal (ad-hoc)')
+        _cov_for_plot = mne.Covariance(
+            np.diag(_var), noise_cov.ch_names, noise_cov['bads'],
+            noise_cov['projs'], noise_cov['nfree'],
+        )
+        _cov_title = 'Covariance Matrix (ad-hoc diagonal)'
     else:
-        fig_cov, fig_spectra = mne.viz.plot_cov(noise_cov, info, show=False)
+        _cov_for_plot = noise_cov
+        _cov_title = 'Covariance Matrix'
 
-        cov_path = os.path.join('out_figs', 'noise_covariance.png')
-        fig_base64['Covariance Matrix'] = save_figure_with_base64(fig_cov, cov_path)
-        report.add_image(cov_path, title='Covariance Matrix')
+    fig_cov, fig_spectra = mne.viz.plot_cov(_cov_for_plot, info, show=False)
+    if used_ad_hoc:
+        fig_cov.suptitle('Ad-hoc diagonal — not estimated from data', fontsize=9)
 
-        spectra_path = os.path.join('out_figs', 'noise_spectra.png')
-        fig_base64['Channel Noise Spectra'] = save_figure_with_base64(fig_spectra, spectra_path)
-        report.add_image(spectra_path, title='Channel Noise Spectra')
+    cov_path = os.path.join('out_figs', 'noise_covariance.png')
+    fig_base64[_cov_title] = save_figure_with_base64(fig_cov, cov_path)
+    report.add_image(cov_path, title=_cov_title)
+
+    spectra_path = os.path.join('out_figs', 'noise_spectra.png')
+    fig_base64['Channel Noise Spectra'] = save_figure_with_base64(fig_spectra, spectra_path)
+    report.add_image(spectra_path, title='Channel Noise Spectra')
 except Exception as e:
     add_info_to_product(product_items, f"Could not plot covariance: {e}", "warning")
 
