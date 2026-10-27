@@ -475,17 +475,25 @@ elif isinstance(data, mne.io.BaseRaw):
     report_msgs.append(f"Recording duration used: {total_baseline_sec:.1f} s")
 
 # Samples and method
-n_samples = noise_cov.nfree + 1
-samples_per_ch = n_samples / max(len(noise_cov.ch_names), 1)
-total_data_sec = n_samples / info['sfreq']
 cov_method = 'ad-hoc diagonal' if used_ad_hoc else noise_cov.get('method', method_str)
 report_msgs.append(f"Method: {cov_method}")
-report_msgs.append(f"Samples used: {n_samples} ({samples_per_ch:.1f} per channel, {total_data_sec:.1f} s of data)")
-if samples_per_ch < 5:
-    report_msgs.append(
-        f"WARNING: Low samples/channel ratio ({samples_per_ch:.1f}). "
-        "Consider using more data or fewer channels for reliable estimation."
-    )
+if used_ad_hoc:
+    # An ad-hoc covariance is not estimated from data: nfree is 0, every channel
+    # of a type gets the same assumed variance, and it is diagonal by
+    # construction. Reporting samples/rank/condition for it produced
+    # "rank 257/257, condition 1.0e+00" - which reads as a better covariance
+    # than a real one (256/257, 1.0e+06). Say n/a instead of inventing numbers.
+    report_msgs.append("Samples used: n/a - not estimated from data")
+else:
+    n_samples = noise_cov.nfree + 1
+    samples_per_ch = n_samples / max(len(noise_cov.ch_names), 1)
+    total_data_sec = n_samples / info['sfreq']
+    report_msgs.append(f"Samples used: {n_samples} ({samples_per_ch:.1f} per channel, {total_data_sec:.1f} s of data)")
+    if samples_per_ch < 5:
+        report_msgs.append(
+            f"WARNING: Low samples/channel ratio ({samples_per_ch:.1f}). "
+            "Consider using more data or fewer channels for reliable estimation."
+        )
 
 # Rank and condition number
 # An ad-hoc covariance is diagonal and stores .data as a 1-D vector, which
@@ -500,11 +508,18 @@ eff_rank = len(evals) - n_zero
 # Skip near-zero eigenvalues (from avg reference, projectors) for condition number
 nonzero_evals = evals[evals > evals[-1] * 1e-10]
 cond = nonzero_evals[-1] / nonzero_evals[0] if len(nonzero_evals) > 0 else float('inf')
-report_msgs.append(f"Effective rank: {eff_rank} / {len(noise_cov.ch_names)}")
-if cond > 1e12:
-    report_msgs.append(f"Condition number: {cond:.1e} (high -- regularization recommended)")
+if used_ad_hoc:
+    report_msgs.append(
+        f"Effective rank: n/a - ad-hoc diagonal, full rank by construction "
+        f"({len(noise_cov.ch_names)} channels)"
+    )
+    report_msgs.append("Condition number: n/a - ad-hoc diagonal, 1.0 by construction")
 else:
-    report_msgs.append(f"Condition number: {cond:.1e}")
+    report_msgs.append(f"Effective rank: {eff_rank} / {len(noise_cov.ch_names)}")
+    if cond > 1e12:
+        report_msgs.append(f"Condition number: {cond:.1e} (high -- regularization recommended)")
+    else:
+        report_msgs.append(f"Condition number: {cond:.1e}")
 
 # Projectors
 projs = info.get('projs', [])
@@ -586,19 +601,41 @@ if ch_variance_info:
     fig_base64['Channel Variance'] = save_figure_with_base64(fig_var, var_path)
     report.add_image(var_path, title='Channel Variance (Bad Channel Detection)')
 
-# Plot 1: Covariance matrix + channel noise spectra (mne.viz.plot_cov)
+# Plot 1: covariance matrix + channel noise spectra.
+# mne.viz.plot_cov indexes .data two-dimensionally, so it raises IndexError on an
+# ad-hoc covariance, whose .data is a 1-D vector of variances. That used to leave
+# out_figs empty with the reason going to stdout only. Plot the variances directly
+# instead - for a diagonal covariance that is the whole content of the matrix.
 try:
-    fig_cov, fig_spectra = mne.viz.plot_cov(noise_cov, info, show=False)
+    if used_ad_hoc or _cov_data.ndim == 1:
+        _var = np.asarray(noise_cov.data).ravel()
+        _all_types = dict(zip(info['ch_names'], info.get_channel_types()))
+        _types = [_all_types.get(ch, 'unknown') for ch in noise_cov.ch_names]
+        fig_cov, _ax = plt.subplots(figsize=(10, 4))
+        for _t in sorted(set(_types)):
+            _idx = [i for i, t in enumerate(_types) if t == _t]
+            _ax.semilogy(_idx, _var[_idx], '.', label=f'{_t} (n={len(_idx)})')
+        _ax.set_xlabel('channel index')
+        _ax.set_ylabel('assumed variance')
+        _ax.set_title('Ad-hoc diagonal covariance — assumed per-channel variance\n'
+                      '(not estimated from data)')
+        _ax.legend(fontsize=8)
+        _ax.grid(True, alpha=0.3)
+        cov_path = os.path.join('out_figs', 'noise_covariance.png')
+        fig_base64['Covariance Diagonal (ad-hoc)'] = save_figure_with_base64(fig_cov, cov_path)
+        report.add_image(cov_path, title='Covariance Diagonal (ad-hoc)')
+    else:
+        fig_cov, fig_spectra = mne.viz.plot_cov(noise_cov, info, show=False)
 
-    cov_path = os.path.join('out_figs', 'noise_covariance.png')
-    fig_base64['Covariance Matrix'] = save_figure_with_base64(fig_cov, cov_path)
-    report.add_image(cov_path, title='Covariance Matrix')
+        cov_path = os.path.join('out_figs', 'noise_covariance.png')
+        fig_base64['Covariance Matrix'] = save_figure_with_base64(fig_cov, cov_path)
+        report.add_image(cov_path, title='Covariance Matrix')
 
-    spectra_path = os.path.join('out_figs', 'noise_spectra.png')
-    fig_base64['Channel Noise Spectra'] = save_figure_with_base64(fig_spectra, spectra_path)
-    report.add_image(spectra_path, title='Channel Noise Spectra')
+        spectra_path = os.path.join('out_figs', 'noise_spectra.png')
+        fig_base64['Channel Noise Spectra'] = save_figure_with_base64(fig_spectra, spectra_path)
+        report.add_image(spectra_path, title='Channel Noise Spectra')
 except Exception as e:
-    print(f"Could not plot covariance: {e}")
+    add_info_to_product(product_items, f"Could not plot covariance: {e}", "warning")
 
 # Plot 2: Whitened evoked (evoked.plot_white) — only if we have epochs
 if isinstance(data, mne.BaseEpochs):
