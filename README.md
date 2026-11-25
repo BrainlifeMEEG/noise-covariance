@@ -1,5 +1,52 @@
 # Compute Noise Covariance
 
+<!-- brainlife-app:begin (generated from the App manifest; edit the manifest, not this block) -->
+
+> **Estimates the MEG/EEG noise covariance matrix with MNE-Python from an empty-room recording or the pre-stimulus baseline of epochs (or an ad hoc diagonal covariance from evoked data), with diagnostic plots and a report.**
+
+Uses the first available input in priority order: an empty-room recording (mne.compute_raw_covariance), evoked data (diagonal ad hoc covariance, only if ad_hoc_fallback is true), or epochs (mne.compute_covariance on the tmin-tmax baseline). Optionally flags and interpolates channels with outlying variance first. Writes cov.fif, diagnostic plots and an HTML report with rank and conditioning messages. Use it before building an inverse operator; prefer empty-room data or a pre-stimulus baseline over the ad hoc fallback. The ica input is not read by main.py.
+
+| | |
+|---|---|
+| 📥 **Inputs** | `neuro/meeg/mne/raw` (optional) · `neuro/meeg/mne/epochs` (optional) · `neuro/meeg/mne/evoked` (optional) · `neuro/meeg/mne/ica` (optional) |
+| 📤 **Outputs** | `neuro/meeg/mne/covariance` · `report/html` |
+| 🐳 **Container** | `brainlifemeeg/mne:1.12.1` |
+| ⚙️ **Resources** | 1 CPUs · 32 GB memory · 2 h walltime |
+| 🔗 **Run it** | [doi.org/10.25663/brainlife.app.891](https://doi.org/10.25663/brainlife.app.891) |
+
+#### 📥 Inputs
+
+| Input | Datatype | Required | Description |
+|---|---|---|---|
+| `empty-room` | `neuro/meeg/mne/raw` | no | Empty-room recording used for noise covariance. This data should be preprocessed (e.g., Maxwell filtered, band-passed) to match the experimental data and remove line noise. |
+| `epochs` | `neuro/meeg/mne/epochs` | no | Epoched MEG/EEG data; the pre-stimulus baseline (tmin to tmax) is used to estimate noise covariance. |
+| `evoked` | `neuro/meeg/mne/evoked` | no | Use only if epoch or empty room data isn't available. |
+| `ica` | `neuro/meeg/mne/ica` | no | ICA solution (MNE); not used by main.py in this version. |
+
+#### 📤 Outputs
+
+| Output | Datatype | Description |
+|---|---|---|
+| `out_dir` | `neuro/meeg/mne/covariance` | Computed noise covariance matrix |
+| `out_report` | `report/html` | HTML report with covariance matrix, noise spectra and (for epochs) whitening diagnostics. |
+
+<details>
+<summary><b>⚙️ Parameters</b> (7)</summary>
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `method` | enum |  | Estimator method for noise covariance. Options: `shrunk`, `empirical`, `diagonal_fixed`, `auto`. |
+| `rank` | string | `None` | Rank estimation parameter ('info', 'full', or a 'dict'[eg: {'mag': 90, 'eeg': 45}]). |
+| `tmin` | string | `None` | Time corresponding to first sample of data used for covariance calculation. None or a number |
+| `tmax` | string | `0` | Time corresponding to last sample of data used for covariance calculation. None or a number |
+| `auto_bad_channels` | boolean | `false` | Automatically detect and interpolate bad channels based on variance. |
+| `bad_channel_threshold` | number | `5` | Variance threshold multiplier. Channels with variance > N times the median will be marked bad (e.g., 5). |
+| `ad_hoc_fallback` | boolean | `false` | Return ad hoc noise covariance, use only when there is no epochs or empty room recordings |
+
+</details>
+
+<!-- brainlife-app:end -->
+
 [![Run on Brainlife.io](https://img.shields.io/badge/Brainlife-bl.app.891-blue.svg)](https://doi.org/10.25663/brainlife.app.891)
 
 ## Description
